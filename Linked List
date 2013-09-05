@@ -1,0 +1,177 @@
+package lists;
+
+public class LinkedList {
+	AnkitaNode start=null;
+	AnkitaNode end=null;
+	
+	public void insert(int key){
+		insertLast(key);
+	}
+	
+	public void insertFirst(int key){
+		AnkitaNode next=null;
+		if(start==null){
+			start=end=new AnkitaNode(key);
+			System.out.println(key + " inserted at start of the List");
+			display();
+			return;
+		}
+		next = start;
+		start=new AnkitaNode(key);
+		start.nextNode= next;
+		System.out.println(key + " inserted at start of the List");
+		display();
+	}
+	
+	public void insertLast(int key){
+	
+		if(start==null)
+		{	start=end=new AnkitaNode(key);
+			System.out.println(key + " inserted at last of the List");
+			return;
+		}
+		end.nextNode= new AnkitaNode(key);
+		end = end.nextNode;
+		System.out.println(key + " inserted at last of the List");
+		display();
+				
+	}
+	
+	public void insertAfter(int key, int previousKey){
+		AnkitaNode temp;
+		temp = start;
+		while(temp!=null){
+			if (temp.key==previousKey){
+				
+				AnkitaNode newNode= new AnkitaNode(key);
+				newNode.nextNode = temp.nextNode;
+				temp.nextNode=newNode;
+				System.out.println(key + " inserted after " + previousKey);
+				display();
+				return;
+				
+			}
+			temp=temp.nextNode;
+			
+		}
+		System.out.println("Key not found......");
+		display();
+	}
+	
+	public void deleteLast(){
+		if(start==null){
+			System.out.println("List Empty.. Cant delete");
+			return;
+		}
+		if(start==end){
+			start=end=null;
+			System.out.println("List Empty.. now");
+			return;
+		}
+		AnkitaNode temp=start;
+		while(temp.nextNode!=end){
+			temp = temp.nextNode;
+		}
+		int element = end.key;
+		temp.nextNode = null;
+		end=temp;
+		System.out.println(element+ " deleted");
+		display();
+	}
+	
+	public void deleteFirst(){
+		int element;
+		if(start!=null){
+			element =start.key;
+			start=start.nextNode;
+			System.out.println(element + " deleted");
+			display();
+			return;
+		}
+		else
+		{	System.out.println("List empty  .. cant delete");
+		return;
+		}
+	}
+		
+	
+	public void deleteAfter(int previousKey){
+		AnkitaNode temp;
+		if(start==null)
+			{System.out.println("List empty  .. cant delete");
+			return;
+			}
+		temp = start;
+		int element;
+		while(temp!=null){
+			if (temp.key== previousKey && temp.nextNode!=null){
+				element=temp.nextNode.key;
+				temp.nextNode= temp.nextNode.nextNode;
+				System.out.println(element +" deleted");
+				display();
+				return;
+			}
+			temp=temp.nextNode;
+	}
+		System.out.println("Element not found");
+	}
+	
+	public void delete(int key){
+		AnkitaNode temp;
+		if(start==null)
+		{System.out.println("List empty  .. cant delete");
+		return;
+		}
+		temp = start;
+		while(temp!=null){
+			if (temp.nextNode.key == key){
+				
+				temp.nextNode= temp.nextNode.nextNode;
+				System.out.println(key +" deleted");
+				display();
+				return;
+			}
+			temp=temp.nextNode;
+		}
+		System.out.println("Element not found");
+	
+	}
+
+	public void display(){
+		AnkitaNode temp=start;
+		System.out.print("\nList : ");
+		while(temp!=null){
+			System.out.print(temp.key +" ");
+			temp=temp.nextNode;
+		}
+		System.out.println();
+	}
+	
+	public void reverse(){
+		AnkitaNode prev;
+		AnkitaNode curr;
+		AnkitaNode next;
+		if(start ==end)
+			return;
+		prev= start;
+		curr=start.nextNode;
+		next=curr.nextNode;
+		while(next!=null){
+			next=curr.nextNode;
+			curr.nextNode=prev;
+			prev= curr;
+			curr=next;
+		}
+		prev = start;
+		start = end;
+		end = prev;
+		end.nextNode=null;
+		display();
+		
+	}
+	
+	public void reverseRecursion(){
+		
+		
+	}
+}
