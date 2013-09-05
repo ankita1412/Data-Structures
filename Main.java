@@ -1,4 +1,4 @@
-package dataStructures;
+package lists;
 
 public class Main {
 
@@ -58,6 +58,26 @@ public class Main {
 			stacklist.pop();
 		stacklist.display();
 		stacklist.pop();
+		
+		System.out.println("\n------------Linked List------------------");
+		LinkedList ll = new LinkedList();
+		for(int  i=2; i<5;i++)
+			ll.insertFirst(i);
+		for(int  i=10; i<14;i++)
+			ll.insertLast(i);
+		for(int  i=10; i<14;i++)
+			ll.insertAfter(i+10,i);
+		for(int  i=10; i<15;i++)
+			ll.deleteAfter(i);
+		ll.deleteFirst();
+		ll.display();
+		
+		//for(int  i=6; i<15;i++)
+			//ll.deleteLast();
+		ll.reverse();
+		
+		
+		
 		
 	
 	}
