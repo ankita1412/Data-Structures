@@ -1,0 +1,1376 @@
+var jsonStr = "["
+	+ "{'location':'1','name':'Advil','quantity':2,'time':[{'hr':15,'min':50},{'hr':18,'min':10}, {'hr':19,'min':30}, {'hr':21,'min':10}],'frequency':'daily', 'description':'Reduce the swelling caused by nasal inflammation to breathe easier','sideeffect':'Itching to skin.'}"
+	+ ",{'location':'3','name':'Nexium','quantity':2,'time':[{'hr':15,'min':55},{'hr':20,'min':20}],'frequency':'daily', 'description':'an antacid drug','sideeffect':''}"
+    + "]"; 
+
+//Drug inventory (quantity) lower water mark
+var medecine_low_mark = 5;
+
+var drug_time = 24*60;
+
+/**
+ * This will have all low inventory medicine. Once inventory is updated, it will be removed from here.
+ */
+var lowInventoryArray = new Array();
+
+/**
+ * It will have all the medicine which has to be consumed by user. 
+ * This inventory count will be updated once user consume the medicine
+ */
+var toBeConsumeMedicine = new Array();
+
+/**
+ * This will have all cancelled schedule
+ */
+var concelledDrugTimeHash = new Array();
+
+//This will keep data structure. 
+//Time format will be on 0-24 format.
+var mediCareStorage;
+
+/**
+ * Default will be -1, Once application started it will change based on application flow values will be assigned.
+ * It remember which flow was it in previous call
+ */
+var appFlowIndex = -1;
+
+/**
+ * **********Debug Param started *****************
+ */
+/**
+ * if this is true, it will send Reset event to Arduino server otherwise it will not send.
+ */
+var disableArduinoServerReset = true;
+
+/**
+ * This is for debugging
+ */
+var isChromeBrowser = false;
+
+/**
+ * **********Debug Param end ****************************
+ */
+
+/**
+ * This function will initialize the application especially data.
+ * It should be call from cueme_ready() 
+ * @returns
+ */
+function init() {
+
+	if (typeof jsonStr == "string") {
+		mediCareStorage = eval('(' + jsonStr + ')');
+	} else {
+		mediCareStorage = jsonStr;
+	}
+	//console.log(mediCareStorage);
+	return mediCareStorage;
+}
+
+/**
+ * Get drug based on the location
+ * @param location
+ * @returns
+ */
+function getMedicine(location) {
+
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		//console.log(medicine);
+		//alert(medicine);
+		if(medicine["location"] == location){
+			//console.log(medicine);
+			return medicine;
+		}
+	}
+	return null;
+}
+
+/**
+ * Gets the drugs by name
+ * @param name
+ * @returns
+ */
+function getDrugByName(name) {
+	if (name != null) {
+		//console.log(mediCareStorage.length);
+		for(var key in mediCareStorage) {
+			var medicine = mediCareStorage[key];
+			if (medicine["name"].toLowerCase() == name.toLowerCase()) {
+				return medicine;
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * Returns the Drug quantity
+ * @param name
+ * @returns
+ */
+function getDrugQty(name){
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		if (medicine["name"].toLowerCase() == name.toLowerCase()) {
+			return medicine["quantity"];
+		}
+	}
+	return null;
+}
+
+/**
+ * Gets the Drug frequency
+ * @param name
+ * @returns
+ */
+function getDrugFrequency(name){
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		if (medicine["name"].toLowerCase() == name.toLowerCase()) {
+			return medicine["frequency"];
+		}
+	}
+	return null;
+}
+
+/**
+ * This will return array of drug time with hr and min
+ */
+function getDrugTimes(name){
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		if (medicine["name"].toLowerCase() == name.toLowerCase()) {
+			return medicine["time"];
+		}
+	}
+	return null;
+}
+
+/**
+ * This will return string of drug description
+ */
+function getDrugDescription(drugName){
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		if (medicine["name"].toLowerCase() == drugName.toLowerCase()) {
+			return medicine["description"];
+		}
+	}
+	return null;
+}
+
+/**
+ * This will return the drug side effect.
+ * @param drugName
+ * @returns
+ */
+function getDrugSideEffect(drugName){
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		if (medicine["name"].toLowerCase() == drugName.toLowerCase()) {
+			return medicine["sideeffect"];
+		}
+	}
+	return null;
+}
+
+/**
+ * This will update the medicine  passed information
+ * @param dispenceLocation
+ * @param name name of the medicine
+ * @param qty number
+ * @param time [{"hr":10,"min": 30},{"hr":11,"min": 30}]
+ * @param freq
+ * @param desc
+ */
+/*
+  function updateMedicine(dispenceLocation, name, qty, time, freq, desc) {
+  
+
+	var medicine = getMedicine(dispenceLocation);
+
+	if (name != null && name.length > 0) {
+		medicine["name"] = name;
+	}
+
+	if (qty != null) {
+
+		medicine["quantity"] = qty;
+	}
+
+	if (time != null) {
+		//convert this to json array
+		medicine["time"] = time;
+	}
+
+	if (freq != null && freq.length > 0) {
+		medicine["frequency"] = time;
+	}
+
+	if (desc != null && desc.length) {
+
+		medicine["description"] = desc;
+	}
+	//console.log(mediCareStorage);
+}
+*/
+//TODO: We have to call this only when we want to recalculate low inventory
+function loadLowInventoryDrug(){
+	var count = 0;	
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		if (medicine["quantity"] <= medecine_low_mark) {
+			//msg +=" "+medicine["name"];
+			if(!isAlreadyLowInventoryDrugExist(medicine)){
+				count++;
+				lowInventoryArray.push(medicine);
+				/*return medicine["quantity"]*/	
+			}
+		}
+	}
+}
+
+function isAlreadyLowInventoryDrugExist(medicine){
+	if(medicine != null) {
+		for(var key in lowInventoryArray) {
+			var tDrug = lowInventoryArray[key];
+			if(tDrug["name"].toLowerCase() == medicine["name"].toLowerCase()){
+				return true;
+			}
+		}	
+	}
+	return false;
+}
+
+/**
+ * This load drug which has lower qty on inventory
+ * @param data
+ * @returns {Boolean}
+ */
+function checkInventoryLow(data) {
+
+	/**
+	 * first check for low inventory medicine, if yes ask user to update if yes, update
+	 * This will be single flow, for one low inventory machine it will prompt voice message
+	 */
+	loadLowInventoryDrug();
+
+	if(lowInventoryArray.length > 0) {
+		console.log(lowInventoryArray);
+		//These are log inventory data.
+		for(var key in lowInventoryArray) {
+			var md = lowInventoryArray[key];
+			console.log(md);
+			var msg = md["name"] +" is low in inventry. Do you want to update inventry ?";
+			console.log(msg);
+			//fireSendCUEMEevent("click", "playTextBtn", msg);
+			playTextEvent(msg);
+			return true;
+		}
+	}
+}
+
+
+/**
+ * It will return one drug which qty is lower
+ * @param data
+ * @returns {Boolean}
+ */
+function getLowInventoryDrug() {
+
+	/**
+	 * first check for low inventory medicine, if yes ask user to update if yes, update
+	 * This will be single flow, for one low inventory machine it will prompt voice message
+	 */
+	//getLowInventoryDrug();
+	if(lowInventoryArray.length > 0) {
+		console.log(lowInventoryArray);
+		//These are log inventory data.
+		for(var key in lowInventoryArray) {
+			var md = lowInventoryArray[key];
+			console.log(md);
+			var msg = md["name"] +" is low in inventory. Do you want to update inventory ?";
+			console.log(msg);
+			return md;
+		}
+	}
+	return null;
+}
+
+/**
+ * once voice confirmation is received for last low inventory medicine
+ * @param qty
+ */
+/*function updateDrugQtyOnInventory(qty){
+
+	if(qty != null) {
+		var lastMed = lowInventoryArray.pop();
+		var name = lastMed["name"];
+		var medicine = getMedicine(lastMed["location"]);
+		medicine["quantity"]= qty;
+	} else {
+		console.log("Not able to update  medicine quantity either user said no or not able to recognize " + qty);
+	}
+}*/
+
+/**
+ * This will update the drug quantity on main repository by drug name 
+ * @param drugName
+ * @param qty
+ */
+function updateDrugQtyOnInventoryByName(drugName, qty){
+	console.log("updateDrugQtyByName drug name = " + drugName +" Quantity = " + qty );
+	var isDrugQtyUpdated = false;
+	if(qty != null && drugName != null) {
+
+		for(var key in lowInventoryArray) {				
+			lastMed = lowInventoryArray[key];
+			//if it exist on lowInventoryArray then delete from this and update main repository.
+			if(lastMed != null && lastMed["name"].toLowerCase() == drugName.toLowerCase()) {
+				//var lastMed = lowInventoryArray.pop();
+				lowInventoryArray.splice(key, 1);
+				var name = lastMed["name"];
+				updateDrugQty(name, qty);
+				isDrugQtyUpdated = true;
+			}
+		}
+	} else {
+		console.log("Not able to update  medicine quantity either user said no or not able to recognize " + qty);
+	}
+	console.log("updateDrugQtyOnInventoryByName:: End :: Drug " + drugName + " updated "+ qty  + " status " + status)
+}
+
+/**
+ * This will update main drug storage quantity
+ * @param name
+ * @param qty
+ */
+function updateDrugQty(name, qty) {
+	var medicine = getDrugByName(name);
+	var existQty = medicine["quantity"];
+	console.log("Existing qty " + existQty);
+	//It will add new qty to remaining qty of drug
+	medicine["quantity"]= eval(existQty) + eval(qty);
+	console.log(mediCareStorage);
+}
+
+/**
+ * This will check drug time
+ */
+function loadDrugToBeConsumedTime(){
+	for(var key in mediCareStorage) {
+		var medicine = mediCareStorage[key];
+		//console.log(medicine);
+		//console.log(medicine["time"]);
+		if(checkDrugTime(medicine["time"])){
+			/**
+			 * all drug time medicine will be added here.
+			 */
+			toBeConsumeMedicine.push(medicine);
+			console.log("******************************");
+			//console.log(medicine);
+		}
+	}
+}
+
+
+/**
+ * Each drug will be checked here also.
+ * @param toBeCheckedHrs
+ * @returns {Boolean}
+ */
+function checkDrugTime(toBeChekedHrs) {
+	var curDate = new Date();
+	var hr = curDate.getHours();
+	var mins = curDate.getMinutes();
+
+	for ( var at in toBeChekedHrs) {
+		//console.log(at);
+		var actArray = toBeChekedHrs[at];
+		var actHrs = actArray["hr"];
+		var actMin = actArray["min"];
+
+		var actMins = actHrs * 60 + actHrs; // add minutes here also
+		var curMins = hr * 60 + mins;
+		var total = (actMins - curMins);
+		//console.log( "actMin=" + actMins + " curMinus = " + curMins +" Total ="+  total +" result " + (total <=  20 && total >= -20 ));
+		if( total <=  drug_time && total >=  (-1 * drug_time) ){
+			//	console.log("&&&&&&&&&&&&&&Selected actHrs:"+ actHrs +" mins:" + actMin);
+			return true;
+		}
+	}
+}
+
+function getDrugTimeMessage(toBeChekedHrs) {
+	var curDate = new Date();
+	var hr = curDate.getHours();
+	var mins = curDate.getMinutes();
+
+	for ( var at in toBeChekedHrs) {
+		//console.log(at);
+		var actArray = toBeChekedHrs[at];
+		var actHrs = actArray["hr"];
+		var actMin = actArray["min"];
+
+		var actMins = actHrs * 60 + actHrs; // add minutes here also
+		var curMins = hr * 60 + mins;
+		var total = (actMins - curMins);
+		//console.log( "actMin=" + actMins + " curMinus = " + curMins +" Total ="+  total +" result " + (total <=  20 && total >= -20 ));
+		if( total <=  drug_time && total >=  (-1 * drug_time) ){
+			//	console.log("&&&&&&&&&&&&&&Selected actHrs:"+ actHrs +" mins:" + actMin);
+			return actHrs+" hour " + actMin +" minutes" ;
+		}
+	}
+}
+
+/**
+ * It will check the drug time from  toBeConsumeMedicine array.
+ * @returns
+ */
+function getDrugTime(){
+	console.log("toBeConsumeMedicine drug lisy **************");
+	console.log(toBeConsumeMedicine);
+	if(toBeConsumeMedicine!= null && toBeConsumeMedicine.length > 0) {
+		for(var key in toBeConsumeMedicine) {
+			var medicine = toBeConsumeMedicine[key];
+			//console.log(medicine);
+			//console.log(medicine["time"]);
+			if(checkDrugTime(medicine["time"]) && !isDrugCancelled(medicine["name"], medicine["time"])){
+				console.log("******************************");
+				return medicine;
+				//console.log(medicine);
+			}
+		}
+
+	}
+	return null;
+}
+
+/**
+ * This will update Drug consumed.  It will removed drug from list of to be consumed.
+ * @param name
+ */
+function removeDrugConsumptionFromQueue(name){
+	console.log("updateDurgConsumption:: " + name);
+	var isConsumed = false;
+	if(toBeConsumeMedicine != null && name != null){
+		for(var key in toBeConsumeMedicine) {
+			var tmpMed = toBeConsumeMedicine[key];
+			if(tmpMed != null && tmpMed["name"].toLowerCase() == name.toLowerCase()){
+				toBeConsumeMedicine.splice(key, 1);
+				isConsumed = true;
+			}
+		}
+		//console.log("updateDurgConsumation::");
+	} else {
+		console.log("There is no drug consumption by this name " + name);
+	}
+	console.log("updateDrugConsumption:: end :: Drug " + name +" consumed status " + isConsumed);
+}
+
+/**
+ * This will add drug cancel time to cancelDrugTimeHash. This is store all the cancelled drug.
+ * @param drugName
+ * @param duration
+ */
+function addCancelDrugTime(drugName, duration){
+	if(drugName != null && duration != null) {
+		concelledDrugTimeHash[drugName]=duration;
+	}
+}
+
+
+/**
+ * This will remove drug cancelled time 
+ * @param drugName
+ * @param duration
+ */
+function removeDrugCancelTime(drugName, duration) {
+	if(drugName != null && duration != null) {
+		//This will remove the drugName indexed
+		concelledDrugTimeHash.splice(drugName, 1);
+	}
+}
+
+/**
+ * Checks this drug dose time is cancelled or not.
+ * @param drugName
+ * @param timeArray
+ * @returns {Boolean}
+ */	
+function isDrugCancelled(drugName, timeArray){
+	if(drugName != null && timeArray != null) {
+		var hr = timeArray["hr"];
+		var min = timeArray["min"];
+		for ( var key in concelledDrugTimeHash) {
+			var tm = concelledDrugTimeHash[key];
+			var aHr = tm["hr"];
+			var aMin = tm["min"];
+			if(aHr == hr && min == aMin){
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * This will be called when inventory and drug times needs to be reset like first time when application reload etc
+ */
+function loadFirstTime(){
+
+	//loading drug which are low on quantity
+	checkInventoryLow();
+
+	//Loading drugs when needs to be consumed.
+	loadDrugToBeConsumedTime();
+}
+
+var isMotionDetectedConversionStarted = false;
+
+/**
+ * This method will be call when component detect the motion.
+ * @param data
+ */
+function motionDetected(data) {
+
+/*	//check if these is low drug quantity on inventory
+	var md = getLowInventoryDrug();
+	if(md != null) {
+		var msg = md["name"] +" is low in inventory. Do you want to update inventory ?";
+		console.log("motionDetected:: getLowInventoryDrug:: " + msg);
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+		return;
+	}
+
+	//if the inventory check is done, check for drug time
+	nextDoseQuestion();
+*/
+	
+	fireSendCUEMEevent("click", "playTextBtn", "Hai, How are you doing ?");
+	
+	isMotionDetectedConversionStarted = false;
+	
+	setTimeout(function(){
+		if(!isMotionDetectedConversionStarted) {
+			isMotionDetectedConversionStarted = false;
+			resetSoketServer();
+		}
+		
+	}, 10*1000);
+}
+
+function conversationStarted(){
+	isMotionDetectedConversionStarted = true;
+}
+
+/**
+ * It will return the location of next nearing drug
+ */
+function getNextNearingDoseTimeMsg(){
+	var msg = null;
+	var location;
+	if(mediCareStorage != null){
+		var nearDosesDrug = null;
+		var lastDoseTime= 24*60 + 59;
+		var now = new Date();
+		var curTime = getCurrentTimeInMinutes();
+
+		var count = 1;
+		console.log("curTime="+ curTime);
+		for(var key in mediCareStorage) {
+			var medicine = mediCareStorage[key];
+			console.log("*******************************");
+			console.log("checking medicine:: medicine = " +  medicine["name"])
+
+			var times =  medicine["time"];
+			for ( var tkey in times) {
+				var tt = times[tkey];
+				var mdDoseTime = getTotalTimeInMinues(tt);
+				console.log("Time for " + medicine["name"] + "="+ mdDoseTime);
+				var curMdDoesTime = mdDoseTime - curTime;
+				console.log("lastDoseTime = " + lastDoseTime + " curMdDoesTime="+ curMdDoesTime);
+				//check cur medicine should be more than zero or lesser than lastDoseTime, then 
+				if(lastDoseTime > curMdDoesTime && curMdDoesTime > 0 ) {
+					lastDoseTime =	curMdDoesTime
+					location = medicine["location"];
+					msg = tt["hr"] + " hours " + tt["min"] +" minutes"
+
+				}
+			} 
+			count++;
+		}
+	}
+
+	console.log("Return location::"+ msg);
+	return msg;
+}
+
+/**
+ * When is my next dose.
+ * Once conversation is over it will reset the Arduino server.
+ */
+function nextDoseQuestion(){
+	//alert("nextDoseQuestion");
+	console.log("nextDoseQuestion :: start");
+	
+	//if the inventory check is done, check for drug time
+	var mdTime = getDrugTime();
+	//alert("mdTime" + mdTime);
+	if( mdTime != null){
+		var timeMsg = getDrugTimeMessage(mdTime["time"]);
+		var msg ="Your next dose is at " +  timeMsg +". Please come back then.";
+		console.log("nextDoseQuestion message:: " + msg);
+		
+		playTextEvent(msg);
+		//fireSendCUEMEevent("click", "playTextBtn", msg);
+		
+	}  else {
+		//If no drug time is available, it will play this message.
+		var msg = "You do not have any more medicine doses scheduled at this time.";
+		console.log(msg);
+		
+		playTextEvent(msg);
+		//fireSendCUEMEevent("click", "playTextBtn", msg);
+	}
+	
+	//reset the Arduino server when flow is completed.
+	//resetSoketServer();
+	
+	
+	
+	console.log("nextDoseQuestion :: end");
+}
+
+function processMedicineNow(){
+	var mdTime = getDrugTime();
+	//playTextEvent("Medicine  given");
+	if(mdTime != null){
+		appFlowIndex = 4;
+		
+		var msg = "Yes, Are you ready?";
+		//var msg ="Yes. Dispense sequence "+ mdTime["location"];
+		console.log("processMedicineNow::" + msg);
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+		return;
+
+	} else {
+
+		//It will have next nearing dosage time.
+		var nextDoseTimeMsg = getNextNearingDoseTimeMsg();
+		var msg = "No, Please come back for your next dose at "+ nextDoseTimeMsg ;
+		console.log(msg);
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+		return;
+	}
+}
+
+function processMedicineSoon(){
+	var mdTime = getDrugTime();
+
+	if(mdTime != null){
+		var nextDoseMsg = getDrugTimeMessage(mdTime["time"]);
+		var msg = "Yes, your next dose is at  "+ nextDoseMsg+". Do you want me go give it to you now ?" ;
+		appFlowIndex = 6;
+		console.log(msg);
+		playTextEvent(msg);
+		//fireSendCUEMEevent("click", "playTextBtn", msg);
+		return;	
+	} else {
+		var msg = null;
+		var nearingDoseMsg = getNextNearingDoseTimeMsg();
+		if(nearingDoseMsg != null && nearingDoseMsg.length > 0){
+			msg = "No, Your next dose is at "+ nearingDoseMsg +".";
+		} else {
+			msg = "You do not have any more medicine doses scheduled at this time.";
+		}
+		playTextEvent(msg);
+		//fireSendCUEMEevent("click", "playTextBtn", msg);
+	}
+}
+
+/**
+ * If drug dispense is cancelled
+ */
+function processDespenseSequence(){
+	var mdTime = getDrugTime();
+	if(mdTime != null) {
+		var actDrugLocation = mdTime["location"];
+		var isDispensed = false;
+		for ( var key in mediCareStorage) {
+			var actDrug = mediCareStorage[key];
+			if(actDrugLocation == actDrug["location"] && !isDrugCancelled(actDrug["name"], actDrug["time"])) {
+				var qty = actDrug["quantity"];
+				actDrug["quantity"] = qty -1;
+				//TODO: We may need to clean even lowInventoryArray and toBeConsumedArray
+				isDispensed = true;
+			}
+		}
+		
+		if(!isDispensed){
+			console.log(actDrug["name"] +" is cancelled.");
+		}
+	} else {
+		var msg = "Okay, i will call you when it is the time.";
+		console.log("getCurrentTime:: " + msg);
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+	}
+
+}
+
+var lastDespensedLocation = -1;
+//dispenseNo is same as location no.
+function processDespenseMedicine(medicineName) {
+
+	if(medicineName != null) {
+		for ( var key in mediCareStorage) {
+			var actDrug = mediCareStorage[key];
+			if(medicineName.toLowerCase() == actDrug["name"].toLowerCase()) {
+				appFlowIndex = 7;
+				//var qty = actDrug["quantity"];
+				//actDrug["quantity"] = qty -1;
+				updateDrugQty(medicineName, -1);
+				lastDespensedLocation =   actDrug["location"];
+				
+				var msg = "Dispense sequence "+ lastDespensedLocation;
+				//TODO: We may need to clean even lowInventoryArray and toBeConsumedArray
+				//sendToSocketComponent(msg);
+				sendCmdToSocket(msg) ;   //Ankita   
+		}
+	}	
+		appFlowIndex = 7;
+		var msg = "Here it is. Would you like to cancel the next scheduled dose ?";
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+	}
+}
+
+/**
+ * This will return the nearest dose time for despinse location.
+ * @param dispenseNo
+ * 'time':[{'hr':8,'min':20},{'hr':18,'min':10}]
+ */
+function getNextDespenseDoseTime(drug){
+
+
+	if(drug != null) {
+		var tm = drug["time"];
+		var curTotal = getCurrentTimeInMinutes();
+		console.log("getCurrentTimeInMinutes:: "+ curTotal);
+		var nextDoseTotalTime = getMaxTimeInMunutes();
+		console.log("nextDoseTotalTime:: "+ nextDoseTotalTime);
+		var nextDoesTime = null;
+		for ( var key in tm) {
+			var dTotal = getTotalTimeInMinues(tm[key]);
+			console.log("getTotalTimeInMinues::" + dTotal );
+			//More than current time but only least
+			if(dTotal < nextDoseTotalTime  && curTotal < dTotal ){
+				nextDoseTotalTime = dTotal;
+				nextDoesTime = tm[key];
+			}
+		}
+	}
+	console.log(nextDoesTime)
+	return  nextDoesTime;
+}
+
+function getMaxTimeInMunutes(){
+	return 24*60+ 60;
+}
+/**
+ * formart of the passed
+ * {'hr':18,'min':10}
+ */
+function getTotalTimeInMinues(drug) {
+	var dHr = drug["hr"];
+	var dMin = drug["min"];
+
+	return dHr * 60 + dMin;
+}
+
+/**
+ * It will return the current Times in munites
+ * @returns
+ */
+function getCurrentTimeInMinutes(){
+	var now = new Date();	
+	return now.getHours() * 60 +  now.getMinutes();
+}
+
+
+/**
+ * 
+ * @param dispenseNo
+ */
+function cancelnextdespense(dispenseNo) {
+	var msg = null;
+	if(dispenseNo != null){
+		var drug = getMedicine(dispenseNo);
+		//{'hr':18,'min':10}
+		var duration =  getNextDespenseDoseTime(drug);
+		//Check drug time is cancelled also.
+		addCancelDrugTime(drug["name"], duration);
+		//
+		msg = "Okay, I will send you a reminder when it is time to take it.";
+	} else {
+		msg="Okay, I will remember that.";
+	}
+	fireSendCUEMEevent("click", "playTextBtn", msg);
+}
+
+/**
+ * Format will be hours_medicine
+ */
+var delay_time = -1;
+function promptDelayMedicine(hr){
+	//This appIndex flow 8
+	appFlowIndex = 8;
+	
+	delay_time = hr;
+	var msg = "Are you sure you want to delay taking your medicine?";
+	fireSendCUEMEevent("click", "playTextBtn", msg);
+}
+
+function scheduleDispense(count, msg, name){
+	
+	//TODO: Dispense sequence after 10 secs
+	setTimeout (function(){
+		console.log("*************************************************** start");
+		console.log("inside while Despensing medicine:: msg=" + msg);
+		console.log("*************************************************** end");
+		sendToSocketComponent(msg);
+		updateDrugQty(name, -1);
+	}, count*5*1000);
+}
+
+function processYesConfirmation(){
+	
+	console.log("appFlowIndex:: "+ appFlowIndex);
+	//TODO: We can have control no instead of hours
+	
+	switch(appFlowIndex) {
+	
+		case 4:
+		case 5: 
+			{
+				var mdTime = getDrugTime();
+				if(mdTime != null) {
+					var name = mdTime["name"];
+					var msg ="Dispense sequence "+ mdTime["location"];
+					console.log("processYesConfirmation::" + msg);
+					
+					//TODO: Dispense sequence
+					sendToSocketComponent(msg);
+					
+					//This will remove from toBeConsumed array
+					removeDrugConsumptionFromQueue(name);
+					
+					updateDrugQty(name, -1);
+					
+					var mdTime1 = null;
+					var count = 1;
+					while((mdTime1 = getDrugTime()) != null){
+					//if((mdTime1 = getDrugTime()) != null){
+						
+						var location = mdTime1["location"];
+						var medName = mdTime1["name"];
+						console.log("Medicine " + medName + " is dispensed at location " + location);
+						console.log("processYesConfirmation:: loop1 "+ count);
+						count++;
+						//processMedicineNow();
+						var msg ="Dispense sequence "+ location;
+						console.log("Loop processYesConfirmation::" + msg);
+						if(count >= 4){
+							//break;
+						}
+						
+						//This will remove from toBeConsumed array
+						removeDrugConsumptionFromQueue(medName);
+						
+						mdTime1 = null;
+						//TODO: Dispense sequence after 10 secs
+						scheduleDispense(count, msg, medName);
+						/*
+						setTimeout (function(){
+							console.log("*************************************************** start");
+							console.log("inside while Despensing medicine:: msg=" + msg);
+							console.log("*************************************************** end");
+							sendToSocketComponent(msg);
+							updateDrugQty(name, -1);
+						}, count*5*1000);
+						*/
+						
+					}
+				} else {
+					var msg ="No, Please come back for your next dose at " + getNextNearingDoseTimeMsg();
+					console.log("processMedicineNow::" + msg);
+					fireSendCUEMEevent("click", "playTextBtn", msg);
+				}
+				
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex = -1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+				
+				break;
+			}
+			
+		case 6: {
+				
+				var mdTime = getDrugTime();
+				if(mdTime != null) {
+					var name = mdTime["name"];
+					var msg ="Dispense sequence "+ mdTime["location"];
+					console.log("processMedicineSoon::" + msg);
+					
+					//TODO: Dispense sequence 
+					sendToSocketComponent(msg);	
+					
+					//This will remove from toBeConsumed array
+					removeDrugConsumptionFromQueue(name);
+					
+					updateDrugQty(name, -1);
+					
+					var mdTime1 = null;
+					var count = 1;
+					while((mdTime1 = getDrugTime()) != null){
+						
+						console.log("processYesConfirmation:: loop2 "+ count);
+						count++;
+						var location = mdTime1["location"];
+						var medName = mdTime1["name"];
+						//processMedicineSoon();
+						var msg ="Dispense sequence "+ location;
+						
+						//This will remove from toBeConsumed array
+						removeDrugConsumptionFromQueue(name);
+						/*
+						  
+						 setTimeout (function(){
+							console.log("*************************************************** start");
+							console.log("inside while Despensing medicine:: msg=" + msg);
+							console.log("*************************************************** end");
+							sendToSocketComponent(msg);
+							updateDrugQty(name, -1);
+						}, count*5*1000);
+						*/
+						scheduleDispense(count, msg, medName);
+						mdTime1 = null;
+					}
+				} 
+				
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex = -1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+				
+				break;
+			}
+		
+		case 7: {
+			
+				console.log("Cancelling next dose time for the despence location = "+ lastDespensedLocation);
+				cancelnextdespense(lastDespensedLocation);
+				var msg ="Okay, I will send you a reminder when it is time to take it.";
+				fireSendCUEMEevent("click", "playTextBtn", msg);
+				lastDespensedLocation = -1;	
+				
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex = -1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+				break;
+			}
+		
+		case 8: {
+			
+				console.log("Medicine dose time delay by " + delay_time);
+				var hr = parseHour(delay_time);
+				var min = parseMin(delay_time);
+				console.log("Hours :: " + hr +" minutes " + min )
+				var mdTime = getDrugTime();
+				console.log("Drug Time :: " +  mdTime);
+				updateNextDespenseDoseTime(mdTime, eval(hr), eval(min));
+				//TODO: UpdateTime
+				var msg = "Okay, I will delay the medicine dose by " + hr +" hours and " + min + " minutes.";
+				fireSendCUEMEevent("click", "playTextBtn", msg);
+				delay_time = null;
+				
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex = -1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+				
+				break;
+			}
+		case 9: {
+			
+				delayMedicineByHourEveryTime();
+				
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex = -1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+				
+				break;
+			}
+		
+		//code By Ankita
+		
+		case 10:
+			voiceCommandReceived=true;
+			alert("Yes");
+			//setTimeout(function(){ processMedicineSoon (); },2 *delay);
+			 processMedicineSoon ();
+			appFlowIndex=-1;
+		
+		default:{
+			break;
+		}	
+	}
+}
+
+function processNoConfirmation(){
+	console.log("processNoConfirmation:: " + appFlowIndex);
+	switch (appFlowIndex) {
+		
+		case 6: {
+			
+				var msg = "Okay, I will call you when it is next time.";
+				fireSendCUEMEevent("click", "playTextBtn", msg);
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex =-1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+			}
+		
+			break;
+	
+		case 7: {
+			
+				var msg ="Okay, I will remember that.";
+				fireSendCUEMEevent("click", "playTextBtn", msg);
+				lastDespensedLocation = -1;	
+				
+				//reset appFlowIndex to -1, This will reset application flow
+				appFlowIndex = -1;
+				
+				//reset the Arduino server when flow is completed.
+				resetSoketServer();
+				break;
+			}
+		
+		case 8: {
+			console.log("Medicine dose time delay by " + delay_time);
+			var msg = "No, I am sorry, I cannot do that. It conflicts with your medical adherence time.";
+			fireSendCUEMEevent("click", "playTextBtn", msg);
+			
+			//reset the Arduino server when flow is completed.
+			resetSoketServer();
+			
+			delay_time = null;
+			//reset appFlowIndex to -1, This will reset application flow
+			appFlowIndex = -1;
+			break;
+		}
+		
+		//Code By Ankita
+		case 10:
+			alert("No");
+			voiceCommandReceived=true;
+			mindwaveDemoFlowIndex=2;
+			appFlowIndex=-1;
+			processBlinkConfirmation();
+			
+		
+		default:
+			break;
+		}
+}
+
+/**
+ * 
+ * This will delay medicine by hours
+ * input format will be hour_medicine name
+ */
+/*
+  function delayMedicineByHours(){
+	console.log("Medicine hours to be update = " + hours);
+		
+		var mdTime = getDrugTime();
+		console.log(mdTime);
+		var drugName = mdTime["name"]
+		console.log("parsed hr="+ hr +" drug name ="+ drugName);
+
+		mdTime = getDrugByName(drugName);
+		if(mdTime != null){
+			updateNextDespenseDoseTime(mdTime, hours, 0);
+			hours = -1;
+			console.log("After update*******");
+			console.log(mediCareStorage);
+			var msg = "Okay, i will delay the "+ drugName +" dose by "+ hours +" hours.";
+			fireSendCUEMEevent("click", "playTextBtn", msg);
+		} else {
+			var msg = "Medicine does not exist with name " + drugName;
+			console.log(msg);
+		}
+	}
+*/
+function updateNextDespenseDoseTime(drug, hours, mins){
+	if(drug != null) {
+		var tm = drug["time"];
+		var curTotal = getCurrentTimeInMinutes();
+		console.log("getCurrentTimeInMinutes:: "+ curTotal);
+		var nextDoseTotalTime = getMaxTimeInMunutes();
+		console.log("nextDoseTotalTime:: "+ nextDoseTotalTime);
+		var nextDoesTimeKey = -1;
+		for ( var key in tm) {
+			var dTotal = getTotalTimeInMinues(tm[key]);
+			console.log("getTotalTimeInMinues::" + dTotal );
+			//More than current time but only least
+			if(dTotal < nextDoseTotalTime  && curTotal < dTotal ){
+				nextDoseTotalTime = dTotal;
+				nextDoesTimeKey = key;
+			}
+		}
+		console.log("Updating index = " + nextDoesTimeKey);
+		if(nextDoesTimeKey != -1){
+			var uTime = tm[nextDoesTimeKey]
+			console.log(uTime)
+			if(hours != null) {
+				console.log("Before updating hours = " + uTime["hr"] );
+				uTime["hr"] = eval(uTime["hr"]) + eval(hours);	
+			}
+
+			if(mins != null){
+				console.log("Before updating minutes = " + uTime["min"] );
+				uTime["min"] = eval(uTime["min"]) + eval(mins);
+			}
+			console.log(uTime)
+		}
+	}
+	console.log(nextDoseTotalTime)
+}
+
+/**
+ * As of now, this will only play message
+ */
+function delayMedicineByHourEveryTime(hours){
+
+	var msg = "I am sorry, only authorized care giver has the access to do that.";
+	fireSendCUEMEevent("click", "playTextBtn", msg);
+	//resetting Arduino server once flow is over.
+	resetSoketServer();
+}
+
+/**
+ * 
+ * @param delay_time will be <someText>_HR:MIN
+ */
+function parseHour(delay_time) {
+	var tmp = delay_time.substring(delay_time.indexOf("_")+ 1);
+	return tmp.split(":")[0];
+}
+
+function parseMin(delay_time) {
+	var tmp = delay_time.substring(delay_time.indexOf("_")+1);
+	return tmp.split(":")[1];
+}
+
+/**********************************************
+ * 
+ * Miscellaneous events process function
+ * ********************************************
+ */
+function getCurrentTime(){
+	var now = new Date();
+	//TODO: Do we need even date also.
+	var msg = "It is " + now.getFullYear()+" year, " + now.getMonth() + " month, " + now.getDate()+" day, " + now.getHours()+" hours and " + now.getMinutes() +" minutes.";
+	console.log("getCurrentTime:: " + msg);
+	
+	playTextEvent(msg);
+	//fireSendCUEMEevent("click", "playTextBtn", msg);
+	
+	//reset the Arduino server when flow is completed.
+	resetSoketServer();
+	
+}
+
+function playDrugDescription(drugName) {
+	
+	var desc = getDrugDescription(drugName);
+	if(desc != null) {
+		var msg = "The medicine " + drugName +" is for " + desc;
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+	} else {
+		console.log("No drug with name "+ drugName);
+	}
+	
+	//reset the Arduino server when flow is completed.
+	resetSoketServer();
+}
+
+function processSideEffects(drugName){
+	var msg ="";
+	if(drugName == null){
+		
+		msg = "No drug name.";
+		fireSendCUEMEevent("click", "playTextBtn", msg);
+		
+		//reset the Arduino server when flow is completed.
+		resetSoketServer();
+		
+		return;
+	}
+		
+	var sideEffect = getDrugSideEffect(drugName);
+	if(sideEffect != null && sideEffect.length > 0) {
+		msg ="Yes, the side effects for " + drugName +" are " + sideEffect;	
+	} else {
+		msg ="No, there are no side effects to " + drugName +".";	
+	}
+	
+	fireSendCUEMEevent("click", "playTextBtn", msg);
+	
+	//reset the Arduino server when flow is completed.
+	resetSoketServer();
+	
+	return;
+}
+
+function processRefillDrug(){
+	//First load low inventory
+	checkInventoryLow();
+
+	if(lowInventoryArray.length > 0) {
+		var msg="";
+		var count = 0;
+		//These are log inventory data.
+		for(var key in lowInventoryArray) {
+			var md = lowInventoryArray[key];
+			if(count > 0){
+				msg += ", " + md["name"];
+			} else {
+				msg = md["name"];
+			}
+			count++;
+		}
+
+		if(msg.length > 0) {
+			msg = "Yes. You need to refill. " + msg;
+			console.log("motionDetected:: getLowInventoryDrug:: " + msg);
+			playTextEvent(msg);
+			fireSendCUEMEevent("click", "playTextBtn", msg);
+			
+		} else {
+			fireSendCUEMEevent("click", "playTextBtn", "No");
+		}
+	} else {
+		fireSendCUEMEevent("click", "playTextBtn", "No");
+	}
+	
+	//reset the Arduino server when flow is completed.
+	resetSoketServer();
+}
+
+
+function setAlarm(delay_time) {
+
+	var hr = parseHour(delay_time);
+	var min = parseMin(delay_time);
+	
+	console.log("delay_time " + delay_time);
+	console.log("hours = " + hr + " minutes = " + min);
+	var alramTime = (eval(hr) * 60 * 60 + eval(min)) * 1000;
+	//TODO: clear format 
+	setTimeout(function(){
+		alert("setAlarm: ")
+	},  alramTime);
+	
+	var msg = "Okay, an alarm for "+ hr + " hours and " + min + " minutes has been set.";
+	fireSendCUEMEevent("click", "playTextBtn", msg);
+	
+	//reset the Arduino server when flow is completed.
+	resetSoketServer();
+}
+
+function setReminder(delay_time) {
+
+	var hr = parseHour(delay_time);
+	var min = parseMin(delay_time);
+	var time =  (eval(hr) * 60 * 60 + eval(min));
+	console.log("delay_time " + delay_time);
+	console.log("hours = " + hr + " minutes = " + min);
+	//TODO: clear format 
+	
+	//TODO: Does this mean 
+	setTimeout(function(){
+		alert("setReminder")
+
+	},  time * 1000);
+
+	
+	var msg = "Okay, I will remind you about " + time;
+	fireSendCUEMEevent("click", "playTextBtn", msg);
+	
+	//reset the Arduino server when flow is completed.
+	resetSoketServer();
+	
+}
+
+/**
+ * Once reponse from Arduino Server replies 
+ * @param data
+ */
+function populateData(data) {
+	
+	//Motion detected on: 
+	if(data.indexOf("Motion detected on: ") != -1){
+		var disNo = data.substring(data.indexOf(": ")+ 2, data.length);
+		console.log("dispense look no " + disNo);
+		//TODO: Once you get response from Arudino i e Motion detected, enable motion detected functionality
+		sendToSocketComponent("Look "+ disNo);
+	} else if(data.indexOf("Request processed: Dispensed") != -1){
+		
+		//Request processed: 
+		resetSoketServer();
+	} else if(data.indexOf("Motion detected") != -1){
+		
+		//motionDetected(data);
+	}
+}
+
+/**
+ * This will raise event to sent msg to Arduino Server.
+ * @param msg
+ */
+function sendToSocketComponent(msg) {
+	fireSendCUEMEevent("click", "sendBtn", msg + "\r\n\r\n");
+}
+
+/**
+ * This will reset the Arduino server.
+ */
+function resetSoketServer(){
+	if(disableArduinoServerReset) {
+		sendToSocketComponent("Reset");	
+	}
+}
+
+/**
+ * 
+ * @param event like click
+ * @param target as playBtn
+ * @param value as message
+ */
+function fireSendCUEMEevent(event, target, value){
+	if(!isChromeBrowser) {
+		sendCUEMEevent(event, target, value);	
+	}
+}
